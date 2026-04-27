@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Enterprise Analytics</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            /* High-End Enterprise Palette */
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(17, 24, 39, 0.45);
+            --panel-border: rgba(255, 255, 255, 0.06);
+            
+            --primary: #3b82f6; 
+            --primary-bright: #60a5fa;
+            --primary-glow: rgba(59, 130, 246, 0.5);
+            
+            --secondary: #8b5cf6;
+            --secondary-glow: rgba(139, 92, 246, 0.5);
+            
+            --risk-low: #10b981;
+            --risk-medium: #f59e0b;
+            --risk-high: #ef4444;
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-mono: 'JetBrains Mono', monospace;
+            
+            --font-family: 'Inter', sans-serif;
+            --radius: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        [data-theme="light"] {
+            --bg-color: #f1f5f9;
+            --panel-bg: rgba(255, 255, 255, 0.85);
+            --panel-border: rgba(0, 0, 0, 0.08);
+            --text-main: #0f172a;
+            --text-muted: #475569;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-family); }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.4s ease;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        /* Layout */
+        .app-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            height: 100vh;
+            max-width: 100vw;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            border-right: 1px solid var(--panel-border);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 1.5rem;
+            background: rgba(11, 15, 25, 0.7);
+            backdrop-filter: blur(12px);
+            z-index: 50;
+        }
+
+        .brand {
+            font-size: 1.35rem; font-weight: 800; letter-spacing: 1.5px;
+            margin-bottom: 2.5rem; display: flex; align-items: center; gap: 0.8rem;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--text-main), var(--primary-bright));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .brand i { -webkit-text-fill-color: var(--primary); }
+
+        .nav-item {
+            padding: 0.85rem 1.2rem; border-radius: 10px; margin-bottom: 0.4rem;
+            color: var(--text-muted); font-weight: 500; cursor: pointer; font-size: 0.95rem;
+            transition: var(--transition); display: flex; align-items: center; gap: 1.2rem;
+            position: relative; overflow: hidden;
+        }
+        
+        .nav-item::before {
+            content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 4px;
+            background: var(--primary); transform: scaleY(0); transition: var(--transition);
+            border-radius: 0 4px 4px 0;
+        }
+        
+        .nav-item:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.03);
+        }
+        
+        .nav-item.active {
+            color: var(--primary-bright);
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.1), transparent);
+            font-weight: 600;
+        }
+        
+        .nav-item.active::before {
+            transform: scaleY(1);
+        }
+
+        /* Main Workspace */
+        .workspace {
+            display: flex; flex-direction: column; height: 100vh; overflow-y: auto;
+            position: relative;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            padding: 1.5rem 2.5rem; border-bottom: 1px solid var(--panel-border);
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(11, 15, 25, 0.4); backdrop-filter: blur(12px);
+            position: sticky; top: 0; z-index: 40;
+        }
+        
+        .header-title { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.5px;}
+        
+        .user-profile {
+            display: flex; align-items: center; gap: 1.5rem; color: var(--text-muted); font-size: 0.9rem;
+        }
+
+        /* Content Area */
+        .tab-content-wrapper { position: relative; flex: 1; }
+        
+        .tab-section {
+            display: none;
+            padding: 2.5rem;
+            animation: fadeInTab 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        .tab-section.active { display: block; }
+
+        @keyframes fadeInTab {
+            from { opacity: 0; transform: translateY(20px); filter: blur(4px); }
+            to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+
+        /* Cards & Panels */
+        .panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            box-shadow: 0 4px 24px -8px rgba(0,0,0,0.5);
+            padding: 1.8rem;
+            position: relative;
+            transition: var(--transition);
+        }
+        
+        .panel:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px -8px rgba(0,0,0,0.6);
+            border-color: rgba(255,255,255,0.1);
+        }
+        
+        .panel-title {
+            font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 1.8rem;
+            display: flex; align-items: center; gap: 0.6rem; font-weight: 600;
+        }
+
+        /* Grids */
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.8rem; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.8rem; }
+        .grid-aside { display: grid; grid-template-columns: 2fr 1fr; gap: 1.8rem; }
+
+        /* Metric Cards */
+        .metric-card { display: flex; align-items: center; gap: 1.5rem; padding: 1.5rem; }
+        .metric-icon { 
+            width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; 
+            box-shadow: inset 0 2px 4px rgba(255,255,255,0.1);
+        }
+        .metric-info h4 { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.4rem;}
+        .metric-info h2 { font-size: 2rem; font-family: var(--text-mono); font-weight: 700; color: var(--text-main); }
+
+        /* Form Controls */
+        .form-group { margin-bottom: 1.4rem; }
+        .form-group label { display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.6rem; font-weight: 600; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 0.85rem 1.2rem; background: rgba(0,0,0,0.25);
+            border: 1px solid var(--panel-border); border-radius: 8px; color: var(--text-main);
+            font-size: 0.95rem; outline: none; transition: var(--transition);
+        }
+        .form-group input:focus, .form-group select:focus { 
+            border-color: var(--primary); 
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); 
+            background: rgba(0,0,0,0.4);
+        }
+        
+        .btn {
+            padding: 0.9rem 1.8rem; border: none; border-radius: 8px; font-weight: 600; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px;
+            cursor: pointer; transition: var(--transition); display: inline-flex; align-items: center; gap: 0.6rem; justify-content: center;
+        }
+        .btn-primary { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; 
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+        .btn-primary:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 8px 25px var(--primary-glow); 
+            filter: brightness(1.1);
+        }
+
+        /* Canvas Charts Container */
+        .chart-container {
+            position: relative;
+            height: 280px;
+            width: 100%;
+        }
+
+        /* Map */
+        .map-wrapper { height: 420px; border-radius: calc(var(--radius) - 4px); overflow: hidden; border: 1px solid var(--panel-border); z-index: 1;}
+        .map-large { height: 520px; }
+
+        /* Feed */
+        .feed-item { padding: 1.2rem 0; border-bottom: 1px solid var(--panel-border); display: flex; gap: 1.2rem; align-items: flex-start; transition: var(--transition); animation: slideInFeed 0.5s ease-out forwards; }
+        @keyframes slideInFeed { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        .feed-item:hover { background: rgba(255,255,255,0.02); border-radius: 8px; padding-left: 0.5rem; }
+        .feed-item:last-child { border-bottom: none; }
+        .feed-icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; box-shadow: 0 2px 10px rgba(0,0,0,0.2);}
+
+        /* Gauge */
+        .gauge-svg { width: 100%; max-height: 220px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)); }
+        .gauge-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 4; }
+        .gauge-val { fill: none; stroke-width: 4; stroke-linecap: round; transition: stroke-dasharray 1.2s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.5s ease; }
+        .gauge-text { fill: var(--text-main); font-size: 0.45em; font-weight: 800; text-anchor: middle; font-family: var(--text-mono);}
+
+        /* Toggles */
+        .toggle-switch { position: relative; display: inline-block; width: 44px; height: 22px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 34px; border: 1px solid var(--panel-border); }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: var(--text-main); transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(22px); background: white; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+        /* ======== ADD-ON FEATURES CSS ======== */
+        
+        /* Toast Notifications */
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: rgba(17, 24, 39, 0.9); backdrop-filter: blur(12px); border-left: 4px solid var(--primary); padding: 15px 20px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); color: var(--text-main); font-size: 0.9rem; animation: slideInRight 0.3s forwards, fadeOut 0.5s forwards 4s; max-width: 300px; display: flex; align-items: center; gap: 10px; }
+        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
+
+        /* Chat Assistant */
+        .chat-widget { position: fixed; bottom: 30px; right: 30px; z-index: 1000; }
+        .chat-btn { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; cursor: pointer; box-shadow: 0 10px 25px var(--primary-glow); transition: var(--transition); border: none; }
+        .chat-btn:hover { transform: scale(1.1); }
+        .chat-panel { position: absolute; bottom: 80px; right: 0; width: 350px; background: rgba(17, 24, 39, 0.95); backdrop-filter: blur(20px); border: 1px solid var(--panel-border); border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); display: none; flex-direction: column; overflow: hidden; transform-origin: bottom right; animation: scaleUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        .chat-panel.open { display: flex; }
+        @keyframes scaleUp { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .chat-header { padding: 15px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--panel-border); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+        .chat-body { padding: 15px; height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .chat-msg { max-width: 80%; padding: 10px 15px; border-radius: 12px; font-size: 0.85rem; line-height: 1.4; }
+        .chat-msg.bot { background: rgba(255,255,255,0.05); align-self: flex-start; border-bottom-left-radius: 2px; }
+        .chat-msg.user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .chat-input { display: flex; padding: 10px; border-top: 1px solid var(--panel-border); background: rgba(0,0,0,0.2); }
+        .chat-input input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 8px; outline: none; }
+        .chat-input button { background: transparent; border: none; color: var(--primary); cursor: pointer; padding: 0 10px; }
+
+        /* Timeline */
+        .timeline { display: flex; justify-content: space-between; align-items: center; position: relative; padding: 20px 0; margin-top: 20px; }
+        .timeline::before { content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 2px; background: rgba(255,255,255,0.1); transform: translateY(-50%); z-index: 0; }
+        .timeline-point { position: relative; z-index: 1; width: 30px; height: 30px; border-radius: 50%; background: var(--panel-bg); border: 2px solid var(--panel-border); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; transition: var(--transition); }
+        .timeline-point.active { border-color: var(--primary); color: var(--primary); box-shadow: 0 0 15px var(--primary-glow); }
+        .timeline-point.warning { border-color: var(--risk-high); color: var(--risk-high); box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
+        .timeline-label { position: absolute; top: 35px; white-space: nowrap; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+
+        /* Form inputs with icon */
+        .input-with-icon { position: relative; }
+        .input-with-icon input { padding-right: 40px; }
+        .input-icon-btn { position: absolute; right: 15px; top: 38px; color: var(--text-muted); cursor: pointer; transition: color 0.3s; }
+        .input-icon-btn:hover { color: var(--primary-bright); }
+
+        /* Priority Tag */
+        .priority-tag { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+        
+        /* Command Palette */
+        .cmd-palette-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); z-index: 10000; display: none; align-items: flex-start; justify-content: center; padding-top: 15vh; }
+        .cmd-palette { width: 600px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; box-shadow: 0 25px 50px rgba(0,0,0,0.8); overflow: hidden; display: flex; flex-direction: column; animation: slideDownCmd 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        @keyframes slideDownCmd { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .cmd-input-container { display: flex; align-items: center; padding: 15px 20px; border-bottom: 1px solid var(--panel-border); background: rgba(0,0,0,0.3); }
+        .cmd-input-container i { color: var(--primary); font-size: 1.2rem; margin-right: 15px; }
+        .cmd-input-container input { flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 1.1rem; outline: none; }
+        .cmd-list { max-height: 350px; overflow-y: auto; padding: 10px; }
+        .cmd-item { padding: 12px 15px; display: flex; align-items: center; gap: 15px; border-radius: 8px; cursor: pointer; color: var(--text-muted); transition: all 0.1s; }
+        .cmd-item.active, .cmd-item:hover { background: rgba(59, 130, 246, 0.2); color: var(--text-main); border-left: 3px solid var(--primary); }
+
+    </style>
+</head>
+<body>
+
+    <!-- Command Palette Overlay -->
+    <div class="cmd-palette-overlay" id="cmdOverlay">
+        <div class="cmd-palette">
+            <div class="cmd-input-container">
+                <i class="fa-solid fa-terminal"></i>
+                <input type="text" id="cmdInput" placeholder="Type a command or search...">
+                <div style="font-family: var(--text-mono); font-size: 0.7rem; color: var(--text-muted); background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">ESC</div>
+            </div>
+            <div class="cmd-list" id="cmdList">
+                <div class="cmd-item active" onclick="execCmd('dashboard')"><i class="fa-solid fa-border-all"></i> Go to Dashboard</div>
+                <div class="cmd-item" onclick="execCmd('analyze')"><i class="fa-solid fa-microchip"></i> Open Analyze Shipment</div>
+                <div class="cmd-item" onclick="execCmd('simulation')"><i class="fa-solid fa-vial"></i> Run System Simulation</div>
+                <div class="cmd-item" onclick="execCmd('reset')"><i class="fa-solid fa-rotate-left"></i> Reset Form Data</div>
+                <div class="cmd-item" onclick="execCmd('theme')"><i class="fa-solid fa-moon"></i> Toggle Dark/Light Theme</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <div class="app-layout">
+        
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-layer-group"></i> NEXUS
+            </div>
+            
+            <div class="nav-item active" data-target="tab-dashboard"><i class="fa-solid fa-border-all"></i> Dashboard <span style="margin-left:auto; font-size:0.7rem; opacity:0.5; font-family:var(--text-mono)">[D]</span></div>
+            <div class="nav-item" data-target="tab-analyze"><i class="fa-solid fa-microchip"></i> Analyze Shipment <span style="margin-left:auto; font-size:0.7rem; opacity:0.5; font-family:var(--text-mono)">[A]</span></div>
+            <div class="nav-item" data-target="tab-route"><i class="fa-solid fa-map-location-dot"></i> Route Intelligence</div>
+            <div class="nav-item" data-target="tab-analytics"><i class="fa-solid fa-chart-line"></i> Risk Analytics</div>
+            <div class="nav-item" data-target="tab-simulation"><i class="fa-solid fa-vial"></i> Simulation Mode</div>
+            <div class="nav-item" data-target="tab-insights"><i class="fa-solid fa-bolt"></i> AI Insights</div>
+            
+            <div style="flex: 1;"></div>
+            
+            <!-- SYSTEM STATUS PANEL (NEW) -->
+            <div style="margin-bottom: 1.5rem; padding: 1.2rem; background: rgba(0,0,0,0.25); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); font-size: 0.75rem; color: var(--text-muted);">
+                <div style="font-weight: 700; text-transform: uppercase; margin-bottom: 0.8rem; letter-spacing: 1px; color: var(--text-main);">System Status</div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Network</span> <span style="color: var(--risk-low); font-weight: 600;"><i class="fa-solid fa-wifi"></i> Stable</span></div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>API Link</span> <span style="color: var(--primary-bright); font-weight: 600;"><i class="fa-solid fa-plug"></i> Simulated</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Telemetry</span> <span style="color: var(--text-main);"><i class="fa-solid fa-rotate"></i> Live Sync</span></div>
+            </div>
+
+            <div class="nav-item" data-target="tab-settings"><i class="fa-solid fa-gear"></i> Settings</div>
+        </aside>
+
+        <!-- MAIN WORKSPACE -->
+        <main class="workspace">
+            
+            <!-- TOP BAR -->
+            <header class="top-bar">
+                <div class="header-title" id="headerTitle">Dashboard Overview</div>
+                
+                <!-- LIVE METRICS STRIP -->
+                <div style="display: flex; gap: 2.5rem; border-left: 1px solid var(--panel-border); border-right: 1px solid var(--panel-border); padding: 0 2.5rem; margin: 0 auto; align-items: center;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Active Routes</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; font-family: var(--text-mono); color: var(--text-main);" class="animate-num" data-val="142">0</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Risk Alerts</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; font-family: var(--text-mono); color: var(--risk-high);" class="animate-num" data-val="7">0</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Avg Delay</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; font-family: var(--text-mono); color: var(--risk-medium);">+14h</div>
+                    </div>
+                </div>
+
+                <div class="user-profile">
+                    <!-- DOWNLOAD REPORT BUTTON -->
+                    <button class="btn" style="padding: 0.5rem 1rem; font-size: 0.75rem; background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); color: var(--text-main);" onclick="showToast('Secure Report generated and downloading...', 'info')">
+                        <i class="fa-solid fa-download"></i> Report
+                    </button>
+
+                    <span style="display: flex; align-items: center; gap: 0.6rem; background: rgba(16, 185, 129, 0.1); padding: 0.4rem 0.8rem; border-radius: 20px; color: var(--risk-low); border: 1px solid rgba(16, 185, 129, 0.2);">
+                        <i class="fa-solid fa-circle fa-fade" style="font-size: 0.5rem;"></i> System Online
+                    </span>
+                    <div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; box-shadow: 0 4px 10px var(--primary-glow);">
+                        AD
+                    </div>
+                </div>
+            </header>
+
+            <div class="tab-content-wrapper">
+                
+                <!-- TAB 1: DASHBOARD -->
+                <div id="tab-dashboard" class="tab-section active">
+                    <div class="grid-3" style="margin-bottom: 1.8rem;">
+                        <div class="panel metric-card">
+                            <div class="metric-icon" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(59, 130, 246, 0.05)); color: var(--primary-bright); border: 1px solid rgba(59, 130, 246, 0.3);">
+                                <i class="fa-solid fa-boxes-stacked"></i>
+                            </div>
+                            <div class="metric-info">
+                                <h4>Total Shipments</h4>
+                                <h2 class="animate-num" data-val="12408">0</h2>
+                            </div>
+                        </div>
+                        <div class="panel metric-card">
+                            <div class="metric-icon" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.05)); color: var(--risk-medium); border: 1px solid rgba(245, 158, 11, 0.3);">
+                                <i class="fa-solid fa-chart-pie"></i>
+                            </div>
+                            <div class="metric-info">
+                                <h4>Average Risk Index</h4>
+                                <h2 style="color: var(--risk-medium)">34%</h2>
+                            </div>
+                        </div>
+                        <div class="panel metric-card">
+                            <div class="metric-icon" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.05)); color: var(--risk-high); border: 1px solid rgba(239, 68, 68, 0.3);">
+                                <i class="fa-solid fa-bell"></i>
+                            </div>
+                            <div class="metric-info">
+                                <h4>Active Alerts</h4>
+                                <h2 class="animate-num" style="color: var(--risk-high)" data-val="24">0</h2>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-aside">
+                        <div class="panel">
+                            <h3 class="panel-title"><i class="fa-solid fa-chart-column"></i> Global Shipment Volume (7 Days)</h3>
+                            <div class="chart-container">
+                                <canvas id="shipmentBarChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="panel" style="display: flex; flex-direction: column;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.8rem;">
+                                <h3 class="panel-title" style="margin-bottom: 0;"><i class="fa-solid fa-satellite-dish fa-beat"></i> Live Telemetry Stream</h3>
+                                <span style="font-size: 0.7rem; color: var(--primary-bright); font-family: var(--text-mono);">SYNCING...</span>
+                            </div>
+                            <!-- LIVE ACTIVITY FEED (AUTO-UPDATES) -->
+                            <div id="liveActivityFeed" style="display: flex; flex-direction: column; overflow: hidden; flex: 1;">
+                                <div class="feed-item">
+                                    <div class="feed-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--risk-low); border: 1px solid rgba(16, 185, 129, 0.3);"><i class="fa-solid fa-check"></i></div>
+                                    <div><div style="font-size: 0.9rem; font-weight: 600;">System Event</div><div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem;">Vessel MSC Anna docked at Los Angeles.</div><div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.2rem; font-family: var(--text-mono); opacity: 0.5;">2 MINS AGO</div></div>
+                                </div>
+                                <div class="feed-item">
+                                    <div class="feed-icon" style="background: rgba(239, 68, 68, 0.15); color: var(--risk-high); border: 1px solid rgba(239, 68, 68, 0.3);"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <div><div style="font-size: 0.9rem; font-weight: 600;">System Event</div><div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem;">Typhoon impacting South China Sea routes.</div><div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.2rem; font-family: var(--text-mono); opacity: 0.5;">10 MINS AGO</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: ANALYZE SHIPMENT -->
+                <div id="tab-analyze" class="tab-section">
+                    <div class="grid-aside">
+                        
+                        <div>
+                            <div class="panel">
+                                <h3 class="panel-title"><i class="fa-solid fa-terminal"></i> AI Scenario Initialization</h3>
+                                <form id="analyzeForm">
+                                    <!-- INPUT WITH MIC ICON -->
+                                    <div class="form-group input-with-icon">
+                                        <label>Origin Node</label>
+                                        <input type="text" id="source" placeholder="e.g., Shanghai Port (CN)" value="Shanghai Port" required>
+                                        <i class="fa-solid fa-microphone input-icon-btn" onclick="showToast('Listening for voice input...', 'info')"></i>
+                                    </div>
+                                    <div class="form-group input-with-icon">
+                                        <label>Destination Node</label>
+                                        <input type="text" id="destination" placeholder="e.g., Los Angeles (US)" value="Los Angeles" required>
+                                        <i class="fa-solid fa-microphone input-icon-btn" onclick="showToast('Listening for voice input...', 'info')"></i>
+                                    </div>
+                                    <div class="grid-2" style="gap: 1rem;">
+                                        <div class="form-group">
+                                            <label>Weather Data</label>
+                                            <input type="text" id="weather" placeholder="e.g., Clear" value="Typhoon warning" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Traffic Conditions</label>
+                                            <input type="text" id="traffic" placeholder="e.g., Normal" value="Heavy Congestion" required>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Current Status</label>
+                                        <input type="text" id="delay" placeholder="e.g., Delayed 24h" value="Delayed 24h" required>
+                                    </div>
+                                    
+                                    <!-- QUICK ACTION BUTTONS -->
+                                    <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+                                        <button type="submit" class="btn btn-primary" id="analyzeBtn" style="flex: 1;">
+                                            <i class="fa-solid fa-microchip"></i> Run Logistics Model
+                                        </button>
+                                        <button type="button" class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); color: var(--text-main);" onclick="autoFillDemo()" title="Auto-fill Demo Data">
+                                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                        </button>
+                                        <button type="button" class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); color: var(--text-main);" onclick="document.getElementById('analyzeForm').reset(); localStorage.clear(); showToast('Form reset', 'info');" title="Reset Form">
+                                            <i class="fa-solid fa-rotate-left"></i>
+                                        </button>
+                                    </div>
+                                    
+                                    <div id="analyzeBannerError" style="display: none; background: rgba(239, 68, 68, 0.1); color: #fca5a5; padding: 1rem; border-radius: 8px; border: 1px solid rgba(239,68,68,0.3); margin-top: 1.5rem; font-size: 0.85rem; line-height: 1.5;">
+                                        <i class="fa-solid fa-robot"></i> <strong>Live API Unreachable.</strong><br>Autonomous predictive matrix engaged.
+                                    </div>
+                                </form>
+                            </div>
+                            
+                            <!-- EVENT TIMELINE HISTORY (NEW) -->
+                            <div class="panel" style="margin-top: 1.8rem; padding: 1.5rem;">
+                                <h3 class="panel-title" style="margin-bottom: 1.2rem;"><i class="fa-solid fa-clock-rotate-left"></i> Analysis History</h3>
+                                <div id="analysisHistoryList" style="display: flex; flex-direction: column; gap: 10px;">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 1.8rem;">
+                            <div class="panel" style="padding: 0;">
+                                <div id="analyzeMap" class="map-wrapper" style="height: 240px; border: none; border-radius: var(--radius);"></div>
+                            </div>
+                            
+                            <div class="panel" id="analyzeResults" style="opacity: 0.3; flex: 1; transition: opacity 0.5s ease;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.8rem;">
+                                    <h3 class="panel-title" style="margin-bottom: 0;"><i class="fa-solid fa-bolt"></i> AI Decision Engine Output</h3>
+                                    <span id="analyzePriorityTag" class="priority-tag" style="background: rgba(255,255,255,0.1); display: none;">TAG</span>
+                                </div>
+                                
+                                <div style="display: flex; gap: 2rem; align-items: center; margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--panel-border);">
+                                    <div style="width: 110px;">
+                                        <svg viewBox="0 0 36 36" class="gauge-svg">
+                                            <path class="gauge-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                            <path class="gauge-val" id="analyzeRiskCircle" stroke-dasharray="0, 100" stroke="var(--risk-low)" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                            <text x="18" y="22.5" class="gauge-text" id="analyzeRiskText">--%</text>
+                                        </svg>
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem;">Calculated Risk Vector</div>
+                                        <div id="analyzeRiskLabel" style="font-weight: 700; font-size: 1.4rem; color: var(--text-main);">Awaiting Analysis</div>
+                                        <!-- CONFIDENCE SCORE (NEW) -->
+                                        <div style="font-size: 0.85rem; color: var(--primary-bright); font-weight: 600; margin-top: 0.5rem;"><i class="fa-solid fa-bullseye"></i> Confidence: <span id="analyzeConfidence">--</span></div>
+                                    </div>
+                                </div>
+
+                                <!-- PREDICTIVE TIMELINE -->
+                                <div class="timeline" id="analyzeTimeline" style="opacity: 0.3;">
+                                    <div class="timeline-point" id="tl-start"><i class="fa-solid fa-box"></i><span class="timeline-label" style="left: -10px;">Dispatch</span></div>
+                                    <div class="timeline-point" id="tl-mid"><i class="fa-solid fa-ship"></i><span class="timeline-label" style="left: -10px;">Midpoint</span></div>
+                                    <div class="timeline-point" id="tl-end"><i class="fa-solid fa-anchor"></i><span class="timeline-label" style="right: -10px;">Arrival</span></div>
+                                </div>
+
+                                <div style="margin-bottom: 1.5rem; margin-top: 1.5rem;">
+                                    <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.8rem;">AI Reasoning</div>
+                                    <div id="analyzeReason" style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">Input scenario parameters to calculate reasoning vector.</div>
+                                </div>
+                                
+                                <div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.8rem;">Optimization Suggestion</div>
+                                    <div id="analyzeSuggestion" style="font-size: 0.95rem; line-height: 1.6; color: var(--primary-bright); font-weight: 500;">--</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- TAB 3: ROUTE INTELLIGENCE -->
+                <div id="tab-route" class="tab-section">
+                    <div class="panel" style="padding: 0; margin-bottom: 1.8rem;">
+                        <div id="routeMap" class="map-large" style="border: none; border-radius: var(--radius);"></div>
+                    </div>
+                    
+                    <div class="grid-3">
+                        <div class="panel" style="border: 1px solid var(--risk-low); background: linear-gradient(180deg, rgba(16, 185, 129, 0.1), rgba(17, 24, 39, 0.45));">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem;">
+                                <h3 style="font-size: 1.1rem; color: var(--risk-low); font-weight: 700;"><i class="fa-solid fa-star"></i> Route Alpha (Optimal)</h3>
+                                <span style="font-family: var(--text-mono); font-weight: bold; color: var(--risk-low); font-size: 1.1rem;">12% Risk</span>
+                            </div>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6;">Via Panama Canal. Favorable weather conditions and low port congestion detected. Recommended for time-sensitive cargo.</p>
+                            <div style="margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.9rem; font-weight: 600; display: flex; justify-content: space-between;">
+                                <span>ETA: 14 Days</span>
+                                <span style="color: var(--risk-low);">Cost: Base</span>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem;">
+                                <h3 style="font-size: 1.1rem; font-weight: 600;"><i class="fa-solid fa-route"></i> Route Beta</h3>
+                                <span style="font-family: var(--text-mono); font-weight: bold; color: var(--risk-medium); font-size: 1.1rem;">45% Risk</span>
+                            </div>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6;">Via Cape Horn. Subject to high winds currently. Adds significant time to transit but avoids major shipping lane congestion.</p>
+                            <div style="margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.9rem; font-weight: 600; display: flex; justify-content: space-between;">
+                                <span>ETA: 17 Days</span>
+                                <span style="color: var(--risk-medium);">Cost: +$4.2k</span>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem;">
+                                <h3 style="font-size: 1.1rem; font-weight: 600;"><i class="fa-solid fa-route"></i> Route Gamma</h3>
+                                <span style="font-family: var(--text-mono); font-weight: bold; color: var(--risk-high); font-size: 1.1rem;">88% Risk</span>
+                            </div>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6;">Direct Pacific Route. Severe typhoon warnings active in the region. Strong possibility of critical delays. Not advised.</p>
+                            <div style="margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.9rem; font-weight: 600; display: flex; justify-content: space-between;">
+                                <span>ETA: Unknown</span>
+                                <span style="color: var(--risk-high);">Cost: Severe</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: RISK ANALYTICS -->
+                <div id="tab-analytics" class="tab-section">
+                    <div class="grid-2">
+                        <div class="panel">
+                            <h3 class="panel-title"><i class="fa-solid fa-chart-pie"></i> Global Risk Distribution</h3>
+                            <div class="chart-container" style="height: 350px;">
+                                <canvas id="riskDoughnutChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <h3 class="panel-title"><i class="fa-solid fa-chart-line"></i> Risk Trend & Forecasting</h3>
+                            <div class="chart-container" style="height: 350px;">
+                                <canvas id="riskLineChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 5: SIMULATION MODE -->
+                <div id="tab-simulation" class="tab-section">
+                    <div class="grid-aside">
+                        <div class="panel">
+                            <h3 class="panel-title"><i class="fa-solid fa-sliders"></i> Environmental Parameters</h3>
+                            
+                            <div class="form-group" style="margin-top: 2.5rem;">
+                                <label>Weather Anomaly Severity</label>
+                                <select id="simWeather">
+                                    <option value="10">Level 1 - Clear Skies (Optimal)</option>
+                                    <option value="40">Level 4 - Moderate Rain/Wind</option>
+                                    <option value="70">Level 7 - Severe Storm Warning</option>
+                                    <option value="95">Level 10 - Category 5 Typhoon</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group" style="margin-top: 2rem;">
+                                <label>Port & Route Congestion</label>
+                                <select id="simTraffic">
+                                    <option value="10">Level 1 - Light Traffic (Flowing)</option>
+                                    <option value="40">Level 4 - Moderate Congestion</option>
+                                    <option value="70">Level 7 - Heavy Gridlock</option>
+                                    <option value="95">Level 10 - Total Port Shutdown</option>
+                                </select>
+                            </div>
+
+                            <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 1.5rem; border-radius: 12px; margin-top: 3rem;">
+                                <p style="font-size: 0.85rem; color: var(--primary-bright); line-height: 1.6;">
+                                    <i class="fa-solid fa-circle-info"></i> Adjust the dropdowns above to simulate real-world logistical disruptions. The AI matrix will dynamically recalculate the global risk vector instantly.
+                                </p>
+                            </div>
+
+                            <!-- AUTO REFRESH TOGGLE (NEW) -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--panel-border);">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">Auto-Refresh Telemetry</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted);">Auto-update risk vectors every 10 seconds.</div>
+                                </div>
+                                <label class="toggle-switch" style="width: 44px; height: 22px;">
+                                    <input type="checkbox" id="simAutoRefresh">
+                                    <span class="slider" style="border-radius: 34px;"></span>
+                                </label>
+                            </div>
+
+                        </div>
+
+                        <div class="panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: linear-gradient(180deg, rgba(17, 24, 39, 0.45), rgba(0,0,0,0.4));">
+                            <h3 class="panel-title" style="margin-bottom: 2rem;">Simulated Risk Vector</h3>
+                            <svg viewBox="0 0 36 36" class="gauge-svg" style="max-height: 280px; margin: 1rem 0;">
+                                <path class="gauge-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <path class="gauge-val" id="simRiskCircle" stroke-dasharray="10, 100" stroke="var(--risk-low)" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <text x="18" y="22.5" class="gauge-text" id="simRiskText">10%</text>
+                            </svg>
+                            <div id="simStatusText" style="font-size: 1.5rem; font-weight: 700; color: var(--risk-low); letter-spacing: 0.5px; margin-top: 1rem;">Operations Normal</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 6: INSIGHTS -->
+                <div id="tab-insights" class="tab-section">
+                    <div class="panel" style="margin-bottom: 2rem; background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.15)); border: 1px solid rgba(139, 92, 246, 0.3);">
+                        <h2 style="font-size: 1.6rem; margin-bottom: 0.6rem; font-weight: 700;"><i class="fa-solid fa-brain" style="color: var(--primary-bright)"></i> Neural AI Insights</h2>
+                        <p style="color: var(--text-main); font-size: 0.95rem; opacity: 0.9;">Auto-generated operational insights based on real-time global telemetric data analysis.</p>
+                    </div>
+
+                    <div class="grid-2">
+                        <div class="panel" style="border-left: 4px solid var(--risk-high);">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem;">
+                                <h4 style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--risk-high); letter-spacing: 1px;"><i class="fa-solid fa-triangle-exclamation"></i> Critical Alert</h4>
+                                <span style="font-size: 0.8rem; color: var(--text-muted); font-family: var(--text-mono);">2 MINS AGO</span>
+                            </div>
+                            <h3 style="margin-bottom: 0.8rem; font-size: 1.2rem; font-weight: 600;">High Congestion Zone Detected</h3>
+                            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.6;">Vessel bunching at the Panama Canal has reached critical density. Average wait times have increased by 48 hours. Suggest rerouting time-sensitive cargo immediately.</p>
+                        </div>
+                        
+                        <div class="panel" style="border-left: 4px solid var(--risk-medium);">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem;">
+                                <h4 style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--risk-medium); letter-spacing: 1px;"><i class="fa-solid fa-cloud-bolt"></i> Weather Advisory</h4>
+                                <span style="font-size: 0.8rem; color: var(--text-muted); font-family: var(--text-mono);">1 HOUR AGO</span>
+                            </div>
+                            <h3 style="margin-bottom: 0.8rem; font-size: 1.2rem; font-weight: 600;">Weather Impact Rising in Pacific</h3>
+                            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.6;">Typhoon formations in the South China Sea are causing a 15% increase in global average risk indexes for the trans-Pacific route sector.</p>
+                        </div>
+                        
+                        <div class="panel" style="border-left: 4px solid var(--risk-low);">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem;">
+                                <h4 style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--risk-low); letter-spacing: 1px;"><i class="fa-solid fa-money-bill-trend-up"></i> Cost Optimization</h4>
+                                <span style="font-size: 0.8rem; color: var(--text-muted); font-family: var(--text-mono);">5 HOURS AGO</span>
+                            </div>
+                            <h3 style="margin-bottom: 0.8rem; font-size: 1.2rem; font-weight: 600;">Savings Opportunity Identified</h3>
+                            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.6;">Consolidating 4 active shipments departing from Rotterdam into a single charter could yield an estimated savings of $42,500.</p>
+                        </div>
+                        
+                        <div class="panel" style="border-left: 4px solid var(--primary-bright);">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem;">
+                                <h4 style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--primary-bright); letter-spacing: 1px;"><i class="fa-solid fa-satellite"></i> System Update</h4>
+                                <span style="font-size: 0.8rem; color: var(--text-muted); font-family: var(--text-mono);">12 HOURS AGO</span>
+                            </div>
+                            <h3 style="margin-bottom: 0.8rem; font-size: 1.2rem; font-weight: 600;">Model V4.2 Weights Recalibrated</h3>
+                            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.6;">The AI risk prediction matrix has successfully updated its weighting to prioritize geopolitical friction over standard seasonal weather delays.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 7: SETTINGS -->
+                <div id="tab-settings" class="tab-section">
+                    <div class="panel" style="max-width: 700px;">
+                        <h3 class="panel-title"><i class="fa-solid fa-sliders"></i> Platform Preferences</h3>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 2rem 0; border-bottom: 1px solid var(--panel-border);">
+                            <div>
+                                <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 0.4rem; color: var(--text-main);">Enterprise Dark Mode</div>
+                                <div style="font-size: 0.9rem; color: var(--text-muted);">Toggle high-contrast enterprise dark theme.</div>
+                            </div>
+                            <label class="toggle-switch" style="width: 50px; height: 26px;">
+                                <input type="checkbox" id="themeToggle" checked>
+                                <span class="slider" style="border-radius: 34px;"></span>
+                            </label>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 2rem 0; border-bottom: 1px solid var(--panel-border);">
+                            <div>
+                                <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 0.4rem; color: var(--text-main);">Simulation Fallback Engine</div>
+                                <div style="font-size: 0.9rem; color: var(--text-muted);">Automatically engage local AI matrices if live API quota is exceeded.</div>
+                            </div>
+                            <label class="toggle-switch" style="width: 50px; height: 26px;">
+                                <input type="checkbox" checked>
+                                <span class="slider" style="border-radius: 34px;"></span>
+                            </label>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 2rem 0;">
+                            <div>
+                                <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 0.4rem; color: var(--text-main);">Critical Push Notifications</div>
+                                <div style="font-size: 0.9rem; color: var(--text-muted);">Receive desktop alerts for critical supply chain disruptions.</div>
+                            </div>
+                            <label class="toggle-switch" style="width: 50px; height: 26px;">
+                                <input type="checkbox" checked>
+                                <span class="slider" style="border-radius: 34px;"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- AI CHAT ASSISTANT -->
+    <div class="chat-widget">
+        <div class="chat-panel" id="chatPanel">
+            <div class="chat-header">
+                <span><i class="fa-solid fa-robot" style="color: var(--primary-bright)"></i> Nexus Assistant</span>
+                <i class="fa-solid fa-times" style="cursor: pointer;" onclick="toggleChat()"></i>
+            </div>
+            <div class="chat-body" id="chatBody">
+                <div class="chat-msg bot">Hello! I am the Nexus AI Logistics Assistant. How can I help optimize your supply chain today?</div>
+            </div>
+            <div class="chat-input">
+                <input type="text" id="chatInput" placeholder="Ask about routes, risks..." onkeypress="if(event.key==='Enter') sendChat()">
+                <button onclick="sendChat()"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+        <button class="chat-btn" onclick="toggleChat()">
+            <i class="fa-solid fa-comment-dots"></i>
+        </button>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        
+        // --- ADD-ON FEATURES JS ---
+        
+        // Toast Notifications
+        function showToast(msg, type='info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            let color = type === 'warning' ? 'var(--risk-medium)' : (type === 'error' ? 'var(--risk-high)' : 'var(--primary)');
+            toast.style.borderLeftColor = color;
+            toast.innerHTML = `<i class="fa-solid ${type === 'info' ? 'fa-circle-info' : 'fa-triangle-exclamation'}"></i> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4500);
+        }
+
+        // Quick Actions (Demo Fill)
+        function autoFillDemo() {
+            document.getElementById('source').value = 'Rotterdam Port (NL)';
+            document.getElementById('destination').value = 'New York (US)';
+            document.getElementById('weather').value = 'Hurricane Warning';
+            document.getElementById('traffic').value = 'Port Strike Active';
+            document.getElementById('delay').value = 'Delayed 72h';
+            showToast('Demo scenario loaded into matrix.', 'info');
+            
+            // Trigger change for persistence
+            ['source', 'destination', 'weather', 'traffic', 'delay'].forEach(id => {
+                document.getElementById(id).dispatchEvent(new Event('change'));
+            });
+        }
+
+        // Session Persistence (LocalStorage)
+        const formFields = ['source', 'destination', 'weather', 'traffic', 'delay'];
+        formFields.forEach(f => {
+            const el = document.getElementById(f);
+            if(localStorage.getItem(f)) el.value = localStorage.getItem(f);
+            el.addEventListener('change', () => localStorage.setItem(f, el.value));
+        });
+
+        // Command Palette Logic
+        const cmdOverlay = document.getElementById('cmdOverlay');
+        const cmdInput = document.getElementById('cmdInput');
+        let cmdOpen = false;
+        let cmdIndex = 0;
+
+        function openCmd() {
+            cmdOverlay.style.display = 'flex';
+            cmdInput.focus();
+            cmdInput.value = '';
+            cmdOpen = true;
+            cmdIndex = 0;
+            updateCmdSelection();
+        }
+
+        function closeCmd() {
+            cmdOverlay.style.display = 'none';
+            cmdOpen = false;
+        }
+
+        function updateCmdSelection() {
+            const items = document.querySelectorAll('.cmd-item');
+            items.forEach((it, idx) => {
+                it.classList.toggle('active', idx === cmdIndex);
+            });
+        }
+
+        function execCmd(action) {
+            closeCmd();
+            if(action === 'dashboard') document.querySelector('[data-target="tab-dashboard"]').click();
+            if(action === 'analyze') document.querySelector('[data-target="tab-analyze"]').click();
+            if(action === 'simulation') document.querySelector('[data-target="tab-simulation"]').click();
+            if(action === 'reset') { document.getElementById('analyzeForm').reset(); localStorage.clear(); showToast('Form reset', 'info'); }
+            if(action === 'theme') document.getElementById('themeToggle').click();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            // Command Palette Activation
+            if (e.key === '/' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                openCmd();
+                return;
+            }
+            if (cmdOpen) {
+                const items = document.querySelectorAll('.cmd-item');
+                if (e.key === 'Escape') { closeCmd(); }
+                else if (e.key === 'ArrowDown') { e.preventDefault(); cmdIndex = (cmdIndex + 1) % items.length; updateCmdSelection(); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); cmdIndex = (cmdIndex - 1 + items.length) % items.length; updateCmdSelection(); }
+                else if (e.key === 'Enter') { e.preventDefault(); items[cmdIndex].click(); }
+                return;
+            }
+
+            // Standard Shortcuts
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                if (e.key.toLowerCase() === 'a') document.querySelector('[data-target="tab-analyze"]').click();
+                if (e.key.toLowerCase() === 'd') document.querySelector('[data-target="tab-dashboard"]').click();
+            }
+        });
+
+        // AI Chat Logic
+        function toggleChat() { document.getElementById('chatPanel').classList.toggle('open'); }
+        function sendChat() {
+            const input = document.getElementById('chatInput');
+            const msg = input.value.trim();
+            if(!msg) return;
+            
+            const body = document.getElementById('chatBody');
+            body.innerHTML += `<div class="chat-msg user">${msg}</div>`;
+            input.value = '';
+            body.scrollTop = body.scrollHeight;
+            
+            setTimeout(() => {
+                let reply = "The neural matrix is analyzing your request...";
+                if(msg.toLowerCase().includes("risk")) reply = "Based on current telemetric data, this route carries a 45% risk probability due to weather patterns.";
+                if(msg.toLowerCase().includes("suggest") || msg.toLowerCase().includes("improve")) reply = "I recommend rerouting via the secondary Pacific vector to avoid the port strike.";
+                if(msg.toLowerCase().includes("hello") || msg.toLowerCase().includes("hi")) reply = "Greetings. All systems are fully operational.";
+                
+                body.innerHTML += `<div class="chat-msg bot">${reply}</div>`;
+                body.scrollTop = body.scrollHeight;
+                
+                if(reply.includes("reroute")) showToast("Optimization suggestion ready in chat.", "info");
+            }, 1000);
+        }
+
+        // --- Live Activity Stream (Auto-updating) ---
+        const feedMessages = [
+            { text: "Shipment departed from Chennai Port", icon: "fa-ship", color: "var(--primary-bright)" },
+            { text: "Delay detected near highway corridor", icon: "fa-triangle-exclamation", color: "var(--risk-high)" },
+            { text: "Weather alert triggered in Pacific sector", icon: "fa-cloud-bolt", color: "var(--risk-medium)" },
+            { text: "Customs clearance successful (Rotterdam)", icon: "fa-check", color: "var(--risk-low)" },
+            { text: "Autonomous re-routing algorithm optimized path", icon: "fa-route", color: "var(--secondary)" }
+        ];
+        
+        setInterval(() => {
+            const feed = document.getElementById('liveActivityFeed');
+            if(!feed) return;
+            const msg = feedMessages[Math.floor(Math.random() * feedMessages.length)];
+            const el = document.createElement('div');
+            el.className = 'feed-item';
+            el.innerHTML = `
+                <div class="feed-icon" style="background: rgba(255,255,255,0.05); color: ${msg.color}; border: 1px solid ${msg.color}; opacity: 0.8;">
+                    <i class="fa-solid ${msg.icon}"></i>
+                </div>
+                <div>
+                    <div style="font-size: 0.9rem; font-weight: 600;">System Event</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem;">${msg.text}</div>
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.2rem; font-family: var(--text-mono); opacity: 0.5;">JUST NOW</div>
+                </div>
+            `;
+            feed.prepend(el);
+            if(feed.children.length > 5) feed.lastChild.remove();
+        }, 8000);
+
+        // --- Event Timeline History ---
+        function saveAnalysisHistory(src, dst, risk) {
+            let history = JSON.parse(localStorage.getItem('nexus_history') || '[]');
+            history.unshift({ src, dst, risk, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+            if(history.length > 6) history.pop();
+            localStorage.setItem('nexus_history', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('analysisHistoryList');
+            if(!list) return;
+            let history = JSON.parse(localStorage.getItem('nexus_history') || '[]');
+            if(history.length === 0) {
+                list.innerHTML = '<div style="font-size: 0.85rem; color: var(--text-muted); text-align: center; padding: 1rem 0;">No recent analysis records found.</div>';
+                return;
+            }
+            list.innerHTML = history.map(h => {
+                let color = h.risk < 40 ? 'var(--risk-low)' : (h.risk < 75 ? 'var(--risk-medium)' : 'var(--risk-high)');
+                return `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='${color}'" onmouseout="this.style.borderColor='rgba(255,255,255,0.05)'" onclick="document.getElementById('source').value='${h.src}'; document.getElementById('destination').value='${h.dst}'; showToast('Loaded historical data', 'info');">
+                    <div>
+                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">${h.src} <i class="fa-solid fa-arrow-right" style="margin: 0 6px; opacity: 0.4; font-size: 0.7rem;"></i> ${h.dst}</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; font-family: var(--text-mono);"><i class="fa-regular fa-clock"></i> ${h.time}</div>
+                    </div>
+                    <div style="font-size: 1.1rem; font-weight: 800; color: ${color};">${h.risk}%</div>
+                </div>
+            `}).join('');
+        }
+        
+        // --- Original JS Below ---
+        
+        // --- Number Animation ---
+        function animateNumbers() {
+            document.querySelectorAll('.animate-num').forEach(el => {
+                const target = parseInt(el.getAttribute('data-val'));
+                let current = 0;
+                const increment = Math.max(1, target / 50);
+                const timer = setInterval(() => {
+                    current += increment;
+                    if (current >= target) {
+                        current = target;
+                        clearInterval(timer);
+                    }
+                    el.textContent = Math.floor(current).toLocaleString();
+                }, 15);
+            });
+        }
+        
+        // --- Chart.js Initialization ---
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.scale.grid.color = 'rgba(255, 255, 255, 0.05)';
+        
+        let chartsInitialized = { dashboard: false, analytics: false };
+
+        function initDashboardCharts() {
+            if (chartsInitialized.dashboard) return;
+            const ctx = document.getElementById('shipmentBarChart').getContext('2d');
+            
+            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(59, 130, 246, 0.8)');
+            gradient.addColorStop(1, 'rgba(139, 92, 246, 0.2)');
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Shipment Volume',
+                        data: [1200, 1900, 1500, 2200, 1800, 900, 1100],
+                        backgroundColor: gradient,
+                        borderRadius: 6,
+                        borderWidth: 0,
+                        barPercentage: 0.6
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, border: { display: false } },
+                        x: { border: { display: false }, grid: { display: false } }
+                    },
+                    animation: { duration: 2000, easing: 'easeOutQuart' }
+                }
+            });
+            chartsInitialized.dashboard = true;
+        }
+
+        function initAnalyticsCharts() {
+            if (chartsInitialized.analytics) return;
+            
+            const ctxDoughnut = document.getElementById('riskDoughnutChart').getContext('2d');
+            new Chart(ctxDoughnut, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Asia Pacific', 'North America', 'Europe', 'South America'],
+                    datasets: [{
+                        data: [45, 25, 20, 10],
+                        backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981'],
+                        borderWidth: 0,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    cutout: '75%',
+                    plugins: {
+                        legend: { position: 'right', labels: { padding: 20, usePointStyle: true, pointStyle: 'circle' } }
+                    },
+                    animation: { animateScale: true, animateRotate: true, duration: 2000 }
+                }
+            });
+
+            const ctxLine = document.getElementById('riskLineChart').getContext('2d');
+            
+            const gradientLine = ctxLine.createLinearGradient(0, 0, 0, 300);
+            gradientLine.addColorStop(0, 'rgba(239, 68, 68, 0.4)');
+            gradientLine.addColorStop(1, 'rgba(239, 68, 68, 0.0)');
+
+            new Chart(ctxLine, {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                    datasets: [{
+                        label: 'Global Risk Trend',
+                        data: [25, 30, 28, 45, 60, 42],
+                        borderColor: '#ef4444',
+                        backgroundColor: gradientLine,
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#ef4444',
+                        pointBorderColor: '#fff',
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, border: { display: false } },
+                        x: { border: { display: false }, grid: { display: false } }
+                    },
+                    animation: { duration: 2000, easing: 'easeOutQuart' }
+                }
+            });
+            
+            chartsInitialized.analytics = true;
+        }
+
+        // --- Navigation & Tab Switching ---
+        const navItems = document.querySelectorAll('.nav-item[data-target]');
+        const tabSections = document.querySelectorAll('.tab-section');
+        const headerTitle = document.getElementById('headerTitle');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                navItems.forEach(nav => nav.classList.remove('active'));
+                tabSections.forEach(tab => tab.classList.remove('active'));
+
+                item.classList.add('active');
+                const targetId = item.getAttribute('data-target');
+                const targetTab = document.getElementById(targetId);
+                
+                if(targetTab) {
+                    targetTab.classList.add('active');
+                    headerTitle.textContent = item.textContent.replace(/\[.\]/g, '').trim();
+                    
+                    if (targetId === 'tab-dashboard') initDashboardCharts();
+                    if (targetId === 'tab-analytics') initAnalyticsCharts();
+                    
+                    setTimeout(() => {
+                        if (targetId === 'tab-analyze' && analyzeMap) analyzeMap.invalidateSize();
+                        if (targetId === 'tab-route' && routeMap) routeMap.invalidateSize();
+                    }, 150);
+                }
+            });
+        });
+
+        // Initialize App
+        initDashboardCharts();
+        animateNumbers();
+        renderHistory();
+        setTimeout(() => showToast("Welcome back to Nexus. Systems are optimal.", "info"), 1000);
+
+        // --- Maps Initialization ---
+        function getCoords(name) {
+            let h = 0; for(let i=0; i<name.length; i++) h = name.charCodeAt(i) + ((h<<5)-h);
+            return [(h%60)-10, (h%180)-90];
+        }
+
+        let analyzeMap = L.map('analyzeMap', { zoomControl: false }).setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(analyzeMap);
+        let analyzeLayer = L.layerGroup().addTo(analyzeMap);
+
+        let routeMap = L.map('routeMap', { zoomControl: false }).setView([25, -40], 3);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(routeMap);
+        L.polyline([[31.2, 121.4], [9.1, -79.6], [40.7, -74.0]], {color: '#10b981', weight: 5, opacity: 0.9}).addTo(routeMap);
+        L.polyline([[31.2, 121.4], [-55.9, -67.2], [40.7, -74.0]], {color: '#f59e0b', weight: 3, dashArray: '5,10'}).addTo(routeMap);
+        L.polyline([[31.2, 121.4], [40.7, -74.0]], {color: '#ef4444', weight: 3, dashArray: '5,10'}).addTo(routeMap);
+
+        // --- Analyze Shipment (Live API + Fallback) ---
+        document.getElementById('analyzeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('analyzeBtn');
+            const errorBadge = document.getElementById('analyzeBannerError');
+            
+            const src = document.getElementById('source').value;
+            const dst = document.getElementById('destination').value;
+            const delay = document.getElementById('delay').value;
+            const weather = document.getElementById('weather').value;
+            const traffic = document.getElementById('traffic').value;
+
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+            errorBadge.style.display = 'none';
+            document.getElementById('analyzeResults').style.opacity = '1';
+            
+            // Reset visual states
+            document.getElementById('analyzeTimeline').style.opacity = '1';
+            document.getElementById('tl-start').className = 'timeline-point active';
+            document.getElementById('tl-mid').className = 'timeline-point';
+            document.getElementById('tl-end').className = 'timeline-point';
+            document.getElementById('analyzePriorityTag').style.display = 'none';
+            document.getElementById('analyzeConfidence').textContent = '--';
+
+            analyzeLayer.clearLayers();
+            const cSrc = getCoords(src); const cDst = getCoords(dst);
+            L.circleMarker(cSrc, {color: 'var(--primary)', radius: 8, fillOpacity: 1}).addTo(analyzeLayer);
+            L.circleMarker(cDst, {color: 'var(--secondary)', radius: 8, fillOpacity: 1}).addTo(analyzeLayer);
+            L.polyline([cSrc, cDst], {color: 'var(--primary-bright)', weight: 3, dashArray: '6,8'}).addTo(analyzeLayer);
+            analyzeMap.fitBounds([cSrc, cDst], {padding: [40, 40]});
+
+            let riskVal = 0, reasonStr = "", suggestionStr = "";
+
+            try {
+                const res = await fetch('http://127.0.0.1:8000/analyze', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({source: src, destination: dst, delay: delay, weather: weather, traffic: traffic})
+                });
+                if (!res.ok) throw new Error("API Failure");
+                const data = await res.json();
+                riskVal = data.risk; reasonStr = data.reason; suggestionStr = data.suggestion;
+            } catch (err) {
+                errorBadge.style.display = 'block';
+                showToast('Live API Failed. Engaging Fallback Simulation.', 'warning');
+                riskVal = Math.floor(Math.random() * 40) + 40; 
+                reasonStr = `[SIMULATED] Risk elevated due to stated weather (${weather}) and traffic constraints.`;
+                suggestionStr = "[SIMULATED] Monitor closely and prepare secondary routing via air freight if delay extends beyond 48 hours.";
+            }
+
+            setTimeout(() => {
+                btn.innerHTML = '<i class="fa-solid fa-microchip"></i> Run Logistics Model';
+                
+                document.getElementById('analyzeReason').textContent = reasonStr;
+                document.getElementById('analyzeSuggestion').textContent = suggestionStr;
+                
+                const circle = document.getElementById('analyzeRiskCircle');
+                const text = document.getElementById('analyzeRiskText');
+                const label = document.getElementById('analyzeRiskLabel');
+                const tag = document.getElementById('analyzePriorityTag');
+                
+                circle.setAttribute('stroke-dasharray', `${riskVal}, 100`);
+                let cur = 0;
+                let t = setInterval(() => { cur += 2; if(cur>=riskVal){cur=Math.round(riskVal); clearInterval(t);} text.textContent=`${cur}%`; }, 20);
+                
+                // Confidence Score
+                document.getElementById('analyzeConfidence').textContent = (Math.floor(Math.random() * 16) + 82) + "%";
+                
+                // Timeline update
+                setTimeout(() => {
+                    document.getElementById('tl-mid').classList.add(riskVal > 75 ? 'warning' : 'active');
+                }, 500);
+                
+                tag.style.display = 'inline-block';
+
+                if (riskVal < 40) {
+                    circle.style.stroke = 'var(--risk-low)'; text.style.fill = 'var(--risk-low)';
+                    label.textContent = "Low Risk Profile"; label.style.color = 'var(--risk-low)';
+                    tag.innerHTML = 'Low Priority 🟢'; tag.style.color = 'var(--risk-low)'; tag.style.border = '1px solid var(--risk-low)';
+                    showToast('Route analysis completed: Low Risk.', 'info');
+                } else if (riskVal < 75) {
+                    circle.style.stroke = 'var(--risk-medium)'; text.style.fill = 'var(--risk-medium)';
+                    label.textContent = "Elevated Risk Vector"; label.style.color = 'var(--risk-medium)';
+                    tag.innerHTML = 'Medium Priority 🟡'; tag.style.color = 'var(--risk-medium)'; tag.style.border = '1px solid var(--risk-medium)';
+                    showToast('Route analysis completed: Elevated Risk detected.', 'warning');
+                } else {
+                    circle.style.stroke = 'var(--risk-high)'; text.style.fill = 'var(--risk-high)';
+                    label.textContent = "Critical Risk Detected"; label.style.color = 'var(--risk-high)';
+                    tag.innerHTML = 'High Priority 🔴'; tag.style.color = 'var(--risk-high)'; tag.style.border = '1px solid var(--risk-high)';
+                    showToast('CRITICAL ALERT: High risk routing detected.', 'error');
+                }
+
+                // Save to history
+                saveAnalysisHistory(src, dst, riskVal);
+                
+            }, 600);
+        });
+
+        // --- Simulation Mode Logic ---
+        const simWeather = document.getElementById('simWeather');
+        const simTraffic = document.getElementById('simTraffic');
+        let simInterval = null;
+        
+        function updateSimulation(randomize = false) {
+            let w = parseInt(simWeather.value);
+            let t = parseInt(simTraffic.value);
+            
+            if(randomize) {
+                w += (Math.random() * 10 - 5);
+                t += (Math.random() * 10 - 5);
+            }
+            
+            const totalRisk = Math.min(99, Math.max(0, Math.round((w * 0.6) + (t * 0.4))));
+            
+            const circle = document.getElementById('simRiskCircle');
+            const text = document.getElementById('simRiskText');
+            const status = document.getElementById('simStatusText');
+            
+            circle.setAttribute('stroke-dasharray', `${totalRisk}, 100`);
+            text.textContent = `${totalRisk}%`;
+            
+            if (totalRisk < 40) {
+                circle.style.stroke = 'var(--risk-low)';
+                status.textContent = "Operations Normal"; status.style.color = 'var(--risk-low)';
+            } else if (totalRisk < 75) {
+                circle.style.stroke = 'var(--risk-medium)';
+                status.textContent = "Monitor Closely"; status.style.color = 'var(--risk-medium)';
+            } else {
+                circle.style.stroke = 'var(--risk-high)';
+                status.textContent = "CRITICAL: Reroute Required"; status.style.color = 'var(--risk-high)';
+            }
+        }
+        
+        simWeather.addEventListener('change', () => updateSimulation(false));
+        simTraffic.addEventListener('change', () => updateSimulation(false));
+
+        document.getElementById('simAutoRefresh').addEventListener('change', (e) => {
+            if(e.target.checked) {
+                showToast("Auto-refresh telemetry engaged.", "info");
+                simInterval = setInterval(() => { updateSimulation(true); }, 10000);
+            } else {
+                showToast("Auto-refresh telemetry disabled.", "warning");
+                clearInterval(simInterval);
+            }
+        });
+
+        // --- Theme Toggle ---
+        document.getElementById('themeToggle').addEventListener('change', (e) => {
+            const html = document.documentElement;
+            html.setAttribute('data-theme', e.target.checked ? 'dark' : 'light');
+            
+            const isLight = !e.target.checked;
+            Chart.defaults.color = isLight ? '#475569' : '#94a3b8';
+            Chart.defaults.scale.grid.color = isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.05)';
+            
+            const charts = Chart.instances;
+            for(let id in charts) charts[id].update();
+        });
+
+    </script>
+</body>
+</html>
